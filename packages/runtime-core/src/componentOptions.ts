@@ -537,6 +537,9 @@ export let shouldCacheAccess = true
 
 export function applyOptions(instance: ComponentInternalInstance) {
   const options = resolveMergedOptions(instance)
+
+  // instance 为组件实例
+  // 从组件实例里面拿到它的代理
   const publicThis = instance.proxy! as any
   const ctx = instance.ctx
 
@@ -549,6 +552,7 @@ export function applyOptions(instance: ComponentInternalInstance) {
     callHook(options.beforeCreate, instance, LifecycleHooks.BEFORE_CREATE)
   }
 
+    // 取出传入的options（这个options就是我们传入的vue中的script部分）
   const {
     // state
     data: dataOptions,
@@ -606,13 +610,18 @@ export function applyOptions(instance: ComponentInternalInstance) {
     resolveInjections(injectOptions, ctx, checkDuplicateProperties)
   }
 
+  // 有没有定义methods
   if (methods) {
+    // 遍历 methods 中的方法
     for (const key in methods) {
-      const methodHandler = (methods as MethodOptions)[key]
+      const methodHandler = (methods as MethodOptions)[key] // 取出具体函数内容
       if (isFunction(methodHandler)) {
         // In dev mode, we use the `createRenderContext` function to define methods to the proxy target,
         // and those are read-only but reconfigurable, so it needs to be redefined here
+        // 开发环境
         if (__DEV__) {
+
+          // 使用数据劫持的方式
           Object.defineProperty(ctx, key, {
             value: methodHandler.bind(publicThis),
             configurable: true,
@@ -620,6 +629,7 @@ export function applyOptions(instance: ComponentInternalInstance) {
             writable: true
           })
         } else {
+          // 将取出的函数内容进行绑定 并赋值给  ctx[key]
           ctx[key] = methodHandler.bind(publicThis)
         }
         if (__DEV__) {
@@ -634,7 +644,10 @@ export function applyOptions(instance: ComponentInternalInstance) {
     }
   }
 
+  // 有没有定义 data
   if (dataOptions) {
+
+    // 开发环境 且 组件中的 data 不为一个funcion
     if (__DEV__ && !isFunction(dataOptions)) {
       warn(
         `The data option must be a function. ` +
@@ -649,6 +662,8 @@ export function applyOptions(instance: ComponentInternalInstance) {
           `async setup() + <Suspense>.`
       )
     }
+
+    // 组件中的 data 不为object
     if (!isObject(data)) {
       __DEV__ && warn(`data() should return an object.`)
     } else {
@@ -673,20 +688,44 @@ export function applyOptions(instance: ComponentInternalInstance) {
   // state initialization complete at this point - start caching access
   shouldCacheAccess = true
 
+  // computed
   if (computedOptions) {
+
+    // 对 computed 进行遍历
     for (const key in computedOptions) {
+
+      // 取出每个computed
       const opt = (computedOptions as ComputedOptions)[key]
-      const get = isFunction(opt)
-        ? opt.bind(publicThis, publicThis)
-        : isFunction(opt.get)
-          ? opt.get.bind(publicThis, publicThis)
+      /* 例子
+        computed:{
+          computed1(){
+            return "asdfasdf"
+          },
+          computed2:{
+            get:function(){
+              return "asdfasfasf"
+            },
+            set:function(newValue){
+              console.log(newValue)
+            }
+          }
+        }
+      */
+
+      // 取出computed中的get 
+      const get = isFunction(opt) // 是否为函数
+        ? opt.bind(publicThis, publicThis) // 给函数绑定 publicThis。可以直接使用this
+        : isFunction(opt.get) // 里面的get是否为一个函数
+          ? opt.get.bind(publicThis, publicThis) // 给get 的函数绑定 publicThis。可以直接使用this
           : NOOP
       if (__DEV__ && get === NOOP) {
         warn(`Computed property "${key}" has no getter.`)
       }
+
+      // 取出computed中的set
       const set =
-        !isFunction(opt) && isFunction(opt.set)
-          ? opt.set.bind(publicThis)
+        !isFunction(opt) && isFunction(opt.set) // computed不是一个函数，且存在属性set为函数
+          ? opt.set.bind(publicThis) // 给 set 的函数绑定 publicThis。可以直接使用this
           : __DEV__
             ? () => {
                 warn(

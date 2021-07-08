@@ -1,3 +1,11 @@
+/*
+ * @Author         : Qiao
+ * @Date           : 2021-07-07 14:47:50
+ * @LastEditors    : Qiao
+ * @LastEditTime   : 2021-07-08 15:29:14
+ * @FilePath       : /packages/runtime-core/src/renderer.ts
+ * @Description    : 
+ */
 import {
   Text,
   Fragment,
@@ -479,10 +487,11 @@ function baseCreateRenderer(
 
   // Note: functions inside this closure should use `const xxx = () => {}`
   // style in order to prevent being inlined by minifiers.
+  // createApp --> vnode --> element
   const patch: PatchFn = (
-    n1,
-    n2,
-    container,
+    n1, // n1 表示旧的 vnode，当 n1 为 null 时，表示时一次挂载（挂载还是更新是由n1决定的）
+    n2, // n2 表示新的 vnode，根据 n2 的类型进行不同的处理
+    container, // 渲染后会将 vnode 渲染到 controller 上
     anchor = null,
     parentComponent = null,
     parentSuspense = null,
@@ -491,6 +500,7 @@ function baseCreateRenderer(
     optimized = false
   ) => {
     // patching & not same type, unmount old tree
+    // 如果旧节点不为null，且新的节点和旧的节点类型不同。那么会销毁整个自节点树
     if (n1 && !isSameVNodeType(n1, n2)) {
       anchor = getNextHostNode(n1)
       unmount(n1, parentComponent, parentSuspense, true)
@@ -502,85 +512,38 @@ function baseCreateRenderer(
       n2.dynamicChildren = null
     }
 
+    // 拿到节点的 type, ref, shapeFlag
+    // type 为节点的类型
+    // shapFlag 判断具体的节点
     const { type, ref, shapeFlag } = n2
     switch (type) {
-      case Text:
+      case Text: // 处理文本节点
         processText(n1, n2, container, anchor)
         break
-      case Comment:
+      case Comment: // 处理注释节点
         processCommentNode(n1, n2, container, anchor)
         break
-      case Static:
+      case Static: // 处理静态节点
         if (n1 == null) {
           mountStaticNode(n2, container, anchor, isSVG)
         } else if (__DEV__) {
           patchStaticNode(n1, n2, container, isSVG)
         }
         break
-      case Fragment:
-        processFragment(
-          n1,
-          n2,
-          container,
-          anchor,
-          parentComponent,
-          parentSuspense,
-          isSVG,
-          slotScopeIds,
-          optimized
-        )
+      case Fragment: // 处理 Fragment 组件节点
+        processFragment(n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized)
         break
       default:
         if (shapeFlag & ShapeFlags.ELEMENT) {
-          processElement(
-            n1,
-            n2,
-            container,
-            anchor,
-            parentComponent,
-            parentSuspense,
-            isSVG,
-            slotScopeIds,
-            optimized
-          )
+          // 处理普通的DOM元素，比如dev/button/span
+          processElement(n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized)
         } else if (shapeFlag & ShapeFlags.COMPONENT) {
-          processComponent(
-            n1,
-            n2,
-            container,
-            anchor,
-            parentComponent,
-            parentSuspense,
-            isSVG,
-            slotScopeIds,
-            optimized
-          )
+          // 处理组件节点
+          processComponent(n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized)
         } else if (shapeFlag & ShapeFlags.TELEPORT) {
-          ;(type as typeof TeleportImpl).process(
-            n1 as TeleportVNode,
-            n2 as TeleportVNode,
-            container,
-            anchor,
-            parentComponent,
-            parentSuspense,
-            isSVG,
-            slotScopeIds,
-            optimized,
-            internals
-          )
+          ;(type as typeof TeleportImpl).process(n1 as TeleportVNode, n2 as TeleportVNode, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized, internals)
         } else if (__FEATURE_SUSPENSE__ && shapeFlag & ShapeFlags.SUSPENSE) {
-          ;(type as typeof SuspenseImpl).process(
-            n1,
-            n2,
-            container,
-            anchor,
-            parentComponent,
-            parentSuspense,
-            isSVG,
-            slotScopeIds,
-            optimized,
-            internals
-          )
+          ;(type as typeof SuspenseImpl).process(n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized, internals)
         } else if (__DEV__) {
           warn('Invalid VNode type:', type, `(${typeof type})`)
         }
@@ -1280,6 +1243,8 @@ function baseCreateRenderer(
     optimized: boolean
   ) => {
     n2.slotScopeIds = slotScopeIds
+
+    // n1 等于 null，表示挂载节点
     if (n1 == null) {
       if (n2.shapeFlag & ShapeFlags.COMPONENT_KEPT_ALIVE) {
         ;(parentComponent!.ctx as KeepAliveContext).activate(
@@ -1290,15 +1255,8 @@ function baseCreateRenderer(
           optimized
         )
       } else {
-        mountComponent(
-          n2,
-          container,
-          anchor,
-          parentComponent,
-          parentSuspense,
-          isSVG,
-          optimized
-        )
+        // 使用 mountComponent 挂载组件
+        mountComponent(n2, container, anchor, parentComponent, parentSuspense, isSVG, optimized)
       }
     } else {
       updateComponent(n1, n2, optimized)
@@ -1691,38 +1649,17 @@ function baseCreateRenderer(
     const c1 = n1 && n1.children
     const prevShapeFlag = n1 ? n1.shapeFlag : 0
     const c2 = n2.children
-
     const { patchFlag, shapeFlag } = n2
     // fast path
     if (patchFlag > 0) {
-      if (patchFlag & PatchFlags.KEYED_FRAGMENT) {
+      if (patchFlag & PatchFlags.KEYED_FRAGMENT) {  // 有key， 执行 patchKeyedChildren
         // this could be either fully-keyed or mixed (some keyed some not)
         // presence of patchFlag means children are guaranteed to be arrays
-        patchKeyedChildren(
-          c1 as VNode[],
-          c2 as VNodeArrayChildren,
-          container,
-          anchor,
-          parentComponent,
-          parentSuspense,
-          isSVG,
-          slotScopeIds,
-          optimized
-        )
+        patchKeyedChildren(c1 as VNode[],c2 as VNodeArrayChildren,container,anchor,parentComponent,parentSuspense,isSVG,slotScopeIds,optimized)
         return
-      } else if (patchFlag & PatchFlags.UNKEYED_FRAGMENT) {
+      } else if (patchFlag & PatchFlags.UNKEYED_FRAGMENT) { // 没有key，执行patchUnkeyedChildren
         // unkeyed
-        patchUnkeyedChildren(
-          c1 as VNode[],
-          c2 as VNodeArrayChildren,
-          container,
-          anchor,
-          parentComponent,
-          parentSuspense,
-          isSVG,
-          slotScopeIds,
-          optimized
-        )
+        patchUnkeyedChildren(c1 as VNode[],c2 as VNodeArrayChildren,container,anchor,parentComponent,parentSuspense,isSVG,slotScopeIds,optimized)
         return
       }
     }
@@ -1779,6 +1716,8 @@ function baseCreateRenderer(
     }
   }
 
+
+  // 没有 key 时候节点的操作
   const patchUnkeyedChildren = (
     c1: VNode[],
     c2: VNodeArrayChildren,
@@ -1790,55 +1729,33 @@ function baseCreateRenderer(
     slotScopeIds: string[] | null,
     optimized: boolean
   ) => {
-    c1 = c1 || EMPTY_ARR
-    c2 = c2 || EMPTY_ARR
-    const oldLength = c1.length
-    const newLength = c2.length
-    const commonLength = Math.min(oldLength, newLength)
+    c1 = c1 || EMPTY_ARR // 旧节点
+    c2 = c2 || EMPTY_ARR // 新节点
+    const oldLength = c1.length // 获取旧节点的长度
+    const newLength = c2.length // 获取新节点的长度
+    const commonLength = Math.min(oldLength, newLength) // 获取新旧节点中最短的那个长度。使用小的避免越界
     let i
+    // 遍历最短的那个长度，
     for (i = 0; i < commonLength; i++) {
-      const nextChild = (c2[i] = optimized
-        ? cloneIfMounted(c2[i] as VNode)
-        : normalizeVNode(c2[i]))
-      patch(
-        c1[i],
-        nextChild,
-        container,
-        null,
-        parentComponent,
-        parentSuspense,
-        isSVG,
-        slotScopeIds,
-        optimized
-      )
+      const nextChild = (c2[i] = optimized ? cloneIfMounted( c2[i ] as VNode) : normalizeVNode(c2[i]))
+      // 从下标0开始，分别从c1、c2中取出对应下标的节点进行比较添加
+      patch(c1[i], nextChild, container, null, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized)
     }
+    // 如果旧的节点长度 > 新的节点长度
     if (oldLength > newLength) {
       // remove old
-      unmountChildren(
-        c1,
-        parentComponent,
-        parentSuspense,
-        true,
-        false,
-        commonLength
-      )
+      // 移除（卸载）剩余的节点
+      unmountChildren(c1,parentComponent,parentSuspense,true,false,commonLength)
     } else {
+      // 旧节点长度 < 新节点长度
+      // 传入旧节点的长度，创建新的节点
       // mount new
-      mountChildren(
-        c2,
-        container,
-        anchor,
-        parentComponent,
-        parentSuspense,
-        isSVG,
-        slotScopeIds,
-        optimized,
-        commonLength
-      )
+      mountChildren(c2,container,anchor,parentComponent,parentSuspense,isSVG,slotScopeIds,optimized,commonLength)
     }
   }
 
   // can be all-keyed or mixed
+  // 有 key 的时候的操作
   const patchKeyedChildren = (
     c1: VNode[],
     c2: VNodeArrayChildren,
@@ -1851,63 +1768,45 @@ function baseCreateRenderer(
     optimized: boolean
   ) => {
     let i = 0
-    const l2 = c2.length
+    const l2 = c2.length // 新节点的长度
     let e1 = c1.length - 1 // prev ending index
     let e2 = l2 - 1 // next ending index
-
     // 1. sync from start
     // (a b) c
     // (a b) d e
+    // 从头部开始遍历，遇到相同的节点就继续，节点不相同的时候就结束遍历（节点长度未知，因此使用 while 循环）
     while (i <= e1 && i <= e2) {
       const n1 = c1[i]
-      const n2 = (c2[i] = optimized
-        ? cloneIfMounted(c2[i] as VNode)
-        : normalizeVNode(c2[i]))
+      const n2 = (c2[i] = optimized ? cloneIfMounted(c2[i] as VNode) : normalizeVNode(c2[i]))
+
+      // 如果节点相同，那么就继续遍历
       if (isSameVNodeType(n1, n2)) {
-        patch(
-          n1,
-          n2,
-          container,
-          null,
-          parentComponent,
-          parentSuspense,
-          isSVG,
-          slotScopeIds,
-          optimized
-        )
+        // 将两个相同的节点进行 patch 比较
+        patch(n1, n2, container, null, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized)
       } else {
+        // 节点不同就跳出遍历
         break
       }
       i++
     }
-
     // 2. sync from end
     // a (b c)
     // d e (b c)
+    // 从尾部进行倒序遍历 节点不同就结束遍历（节点长度未知，因此使用 while 循环）
     while (i <= e1 && i <= e2) {
       const n1 = c1[e1]
-      const n2 = (c2[e2] = optimized
-        ? cloneIfMounted(c2[e2] as VNode)
-        : normalizeVNode(c2[e2]))
+      const n2 = (c2[e2] = optimized ? cloneIfMounted(c2[e2] as VNode) : normalizeVNode(c2[e2]))
+
+      // 如果节点相同，那么就继续遍历
       if (isSameVNodeType(n1, n2)) {
-        patch(
-          n1,
-          n2,
-          container,
-          null,
-          parentComponent,
-          parentSuspense,
-          isSVG,
-          slotScopeIds,
-          optimized
-        )
+        patch(n1, n2, container, null, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized)
       } else {
+        // 节点不同就跳出遍历
         break
       }
       e1--
       e2--
     }
-
     // 3. common sequence + mount
     // (a b)
     // (a b) c
@@ -1915,29 +1814,18 @@ function baseCreateRenderer(
     // (a b)
     // c (a b)
     // i = 0, e1 = -1, e2 = 0
+    // 第三步是如果旧节点遍历完毕，但是依然有新的节点，那么就新增节点
     if (i > e1) {
       if (i <= e2) {
-        const nextPos = e2 + 1
+        const nextPos = e2 + 1 // 找到新节点所在的位置
         const anchor = nextPos < l2 ? (c2[nextPos] as VNode).el : parentAnchor
         while (i <= e2) {
-          patch(
-            null,
-            (c2[i] = optimized
-              ? cloneIfMounted(c2[i] as VNode)
-              : normalizeVNode(c2[i])),
-            container,
-            anchor,
-            parentComponent,
-            parentSuspense,
-            isSVG,
-            slotScopeIds,
-            optimized
-          )
+          // 第一个参数为空的情况下，执行挂载的操作
+          patch(null, (c2[i] = optimized ? cloneIfMounted(c2[i] as VNode) : normalizeVNode(c2[i])), container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized)
           i++
         }
       }
     }
-
     // 4. common sequence + unmount
     // (a b) c
     // (a b)
@@ -1945,137 +1833,114 @@ function baseCreateRenderer(
     // a (b c)
     // (b c)
     // i = 0, e1 = 0, e2 = -1
+    // 如果新节点遍历完了还存在旧节点，那么就是移除的操作
     else if (i > e2) {
-      while (i <= e1) {
-        unmount(c1[i], parentComponent, parentSuspense, true)
-        i++
-      }
+          while (i <= e1) {
+            unmount(c1[i], parentComponent, parentSuspense, true)
+            i++
+          }
     }
-
     // 5. unknown sequence
     // [i ... e1 + 1]: a b [c d e] f g
     // [i ... e2 + 1]: a b [e d c h] f g
     // i = 2, e1 = 4, e2 = 5
+    // 如果中间部分是未知的节点序列，如果有多余的节点，那么就移除节点。之后是移动节点和挂载节点
+    // 中间还有很多未知的或者乱序的节点
     else {
-      const s1 = i // prev starting index
-      const s2 = i // next starting index
+    const s1 = i // prev starting index
+    const s2 = i // next starting index
 
-      // 5.1 build key:index map for newChildren
-      const keyToNewIndexMap: Map<string | number, number> = new Map()
-      for (i = s2; i <= e2; i++) {
-        const nextChild = (c2[i] = optimized
-          ? cloneIfMounted(c2[i] as VNode)
-          : normalizeVNode(c2[i]))
-        if (nextChild.key != null) {
-          if (__DEV__ && keyToNewIndexMap.has(nextChild.key)) {
-            warn(
-              `Duplicate keys found during update:`,
-              JSON.stringify(nextChild.key),
-              `Make sure keys are unique.`
-            )
+    // 5.1 build key:index map for newChildren
+
+    // 根据 key 建立 map 索引图
+    const keyToNewIndexMap: Map<string | number, number> = new Map()
+    for (i = s2; i <= e2; i++) {
+      const nextChild = (c2[i] = optimized ? cloneIfMounted(
+            c2[i] as VNode
+          ) : normalizeVNode(c2[i]))
+      if (nextChild.key != null) {
+        if (__DEV__ && keyToNewIndexMap.has(nextChild.key)) {
+          warn(`Duplicate keys found during update:`, JSON.stringify(nextChild.key), `Make sure keys are unique.`)
+        }
+        keyToNewIndexMap.set(nextChild.key, i)
+      }
+    }
+
+    // 5.2 loop through old children left to be patched and try to patch
+    // matching nodes & remove nodes that are no longer present
+    let j
+    let patched = 0
+    const toBePatched = e2 - s2 + 1
+    let moved = false
+    // used to track whether any node has moved
+    let maxNewIndexSoFar = 0
+    // works as Map<newIndex, oldIndex>
+    // Note that oldIndex is offset by +1
+    // and oldIndex = 0 is a special value indicating the new node has
+    // no corresponding old node.
+    // used for determining longest stable subsequence
+    const newIndexToOldIndexMap = new Array(toBePatched)
+    for (i = 0; i < toBePatched; i++) newIndexToOldIndexMap[i] = 0
+
+    for (i = s1; i <= e1; i++) {
+      const prevChild = c1[i]
+      if (patched >= toBePatched) {
+        // all new children have been patched so this can only be a removal
+        unmount(prevChild, parentComponent, parentSuspense, true)
+        continue
+      }
+      let newIndex
+      if (prevChild.key != null) {
+        newIndex = keyToNewIndexMap.get(prevChild.key)
+      } else {
+        // key-less node, try to locate a key-less node of the same type
+        for (j = s2; j <= e2; j++) {
+          if (newIndexToOldIndexMap[j - s2] === 0 && isSameVNodeType(
+              prevChild,
+              c2[j] as VNode
+            )) {
+            newIndex = j
+            break
           }
-          keyToNewIndexMap.set(nextChild.key, i)
         }
       }
-
-      // 5.2 loop through old children left to be patched and try to patch
-      // matching nodes & remove nodes that are no longer present
-      let j
-      let patched = 0
-      const toBePatched = e2 - s2 + 1
-      let moved = false
-      // used to track whether any node has moved
-      let maxNewIndexSoFar = 0
-      // works as Map<newIndex, oldIndex>
-      // Note that oldIndex is offset by +1
-      // and oldIndex = 0 is a special value indicating the new node has
-      // no corresponding old node.
-      // used for determining longest stable subsequence
-      const newIndexToOldIndexMap = new Array(toBePatched)
-      for (i = 0; i < toBePatched; i++) newIndexToOldIndexMap[i] = 0
-
-      for (i = s1; i <= e1; i++) {
-        const prevChild = c1[i]
-        if (patched >= toBePatched) {
-          // all new children have been patched so this can only be a removal
-          unmount(prevChild, parentComponent, parentSuspense, true)
-          continue
-        }
-        let newIndex
-        if (prevChild.key != null) {
-          newIndex = keyToNewIndexMap.get(prevChild.key)
+      if (newIndex === undefined) {
+        unmount(prevChild, parentComponent, parentSuspense, true)
+      } else {
+        newIndexToOldIndexMap[newIndex - s2] = i + 1
+        if (newIndex >= maxNewIndexSoFar) {
+          maxNewIndexSoFar = newIndex
         } else {
-          // key-less node, try to locate a key-less node of the same type
-          for (j = s2; j <= e2; j++) {
-            if (
-              newIndexToOldIndexMap[j - s2] === 0 &&
-              isSameVNodeType(prevChild, c2[j] as VNode)
-            ) {
-              newIndex = j
-              break
-            }
-          }
+          moved = true
         }
-        if (newIndex === undefined) {
-          unmount(prevChild, parentComponent, parentSuspense, true)
-        } else {
-          newIndexToOldIndexMap[newIndex - s2] = i + 1
-          if (newIndex >= maxNewIndexSoFar) {
-            maxNewIndexSoFar = newIndex
-          } else {
-            moved = true
-          }
-          patch(
-            prevChild,
-            c2[newIndex] as VNode,
-            container,
-            null,
-            parentComponent,
-            parentSuspense,
-            isSVG,
-            slotScopeIds,
-            optimized
-          )
-          patched++
-        }
+        patch(prevChild, c2[newIndex] as VNode, container, null, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized)
+        patched++
       }
+    }
 
-      // 5.3 move and mount
-      // generate longest stable subsequence only when nodes have moved
-      const increasingNewIndexSequence = moved
-        ? getSequence(newIndexToOldIndexMap)
-        : EMPTY_ARR
-      j = increasingNewIndexSequence.length - 1
-      // looping backwards so that we can use last patched node as anchor
-      for (i = toBePatched - 1; i >= 0; i--) {
-        const nextIndex = s2 + i
-        const nextChild = c2[nextIndex] as VNode
-        const anchor =
-          nextIndex + 1 < l2 ? (c2[nextIndex + 1] as VNode).el : parentAnchor
-        if (newIndexToOldIndexMap[i] === 0) {
-          // mount new
-          patch(
-            null,
-            nextChild,
-            container,
-            anchor,
-            parentComponent,
-            parentSuspense,
-            isSVG,
-            slotScopeIds,
-            optimized
-          )
-        } else if (moved) {
-          // move if:
-          // There is no stable subsequence (e.g. a reverse)
-          // OR current node is not among the stable sequence
-          if (j < 0 || i !== increasingNewIndexSequence[j]) {
-            move(nextChild, container, anchor, MoveType.REORDER)
-          } else {
-            j--
-          }
+    // 5.3 move and mount
+    // generate longest stable subsequence only when nodes have moved
+    const increasingNewIndexSequence = moved ? getSequence(newIndexToOldIndexMap) : EMPTY_ARR
+    j = increasingNewIndexSequence.length - 1
+    // looping backwards so that we can use last patched node as anchor
+    for (i = toBePatched - 1; i >= 0; i--) {
+      const nextIndex = s2 + i
+      const nextChild = c2[nextIndex] as VNode
+      const anchor = nextIndex + 1 < l2 ? (c2[nextIndex + 1] as VNode).el : parentAnchor
+      if (newIndexToOldIndexMap[i] === 0) {
+        // mount new
+        patch(null, nextChild, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized)
+      } else if (moved) {
+        // move if:
+        // There is no stable subsequence (e.g. a reverse)
+        // OR current node is not among the stable sequence
+        if (j < 0 || i !== increasingNewIndexSequence[j]) {
+          move(nextChild, container, anchor, MoveType.REORDER)
+        } else {
+          j--
         }
       }
+    }
     }
   }
 

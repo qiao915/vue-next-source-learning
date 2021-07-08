@@ -283,6 +283,8 @@ export function isVNode(value: any): value is VNode {
   return value ? value.__v_isVNode === true : false
 }
 
+
+// 判断节点的类型
 export function isSameVNodeType(n1: VNode, n2: VNode): boolean {
   if (
     __DEV__ &&
@@ -292,6 +294,8 @@ export function isSameVNodeType(n1: VNode, n2: VNode): boolean {
     // HMR only: if the component has been hot-updated, force a reload.
     return false
   }
+
+  // 节点的类型相同且节点的key相同
   return n1.type === n2.type && n1.key === n2.key
 }
 
