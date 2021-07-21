@@ -50,6 +50,8 @@ export const vModelText: ModelDirective<
   created(el, { modifiers: { lazy, trim, number } }, vnode) {
     el._assign = getModelAssigner(vnode)
     const castToNumber = number || el.type === 'number'
+
+    // 如果 v-model 后面有 lazy 修饰符的话。就使用change监听，否则用input监听
     addEventListener(el, lazy ? 'change' : 'input', e => {
       if ((e.target as any).composing) return
       let domValue: string | number = el.value
@@ -60,6 +62,8 @@ export const vModelText: ModelDirective<
       }
       el._assign(domValue)
     })
+
+    // 有 trim 修饰符
     if (trim) {
       addEventListener(el, 'change', () => {
         el.value = el.value.trim()

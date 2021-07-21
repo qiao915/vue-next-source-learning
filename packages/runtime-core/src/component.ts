@@ -556,10 +556,19 @@ export function setupComponent(
   isInSSRComponentSetup = isSSR
 
   const { props, children } = instance.vnode
+
+  // 判断是否是一个有状态的组件
   const isStateful = isStatefulComponent(instance)
+
+  // 初始化props
   initProps(instance, props, isStateful, isSSR)
+
+  // 初始化slots
   initSlots(instance, children)
 
+  // isStateful 判断组件是否是一个有状态的组件
+  // 如果组件是一个对象，则是有状态组件；如果组件是一个函数，则是无状态组件
+  // 设置有状态的组件
   const setupResult = isStateful
     ? setupStatefulComponent(instance, isSSR)
     : undefined
@@ -572,7 +581,6 @@ function setupStatefulComponent(
   isSSR: boolean
 ) {
   const Component = instance.type as ComponentOptions
-
   if (__DEV__) {
     if (Component.name) {
       validateComponentName(Component.name, instance.appContext.config)
@@ -598,30 +606,45 @@ function setupStatefulComponent(
     }
   }
   // 0. create render proxy property access cache
+  // 创建渲染代理属性的访问缓存
   instance.accessCache = Object.create(null)
+
   // 1. create public instance / render proxy
   // also mark it raw so it's never observed
+  // 创建渲染上下文代理
+  // instance.ctx 和 instance.proxy
   instance.proxy = markRaw(new Proxy(instance.ctx, PublicInstanceProxyHandlers))
   if (__DEV__) {
     exposePropsOnRenderContext(instance)
   }
   // 2. call setup()
+  // 从组件中取出 setup 函数。例如：从 createApp(App) 中取出 setup （App为组件）
   const { setup } = Component
+  // 判断 setup 是否有参数。我们如果用 Options API 去写的时候，是没有 setup 的
   if (setup) {
+    // setup有参数，那么会创建一个 setupContext 上下文，这个上下文可以在函数中被使用。比如{emit,slots}等
     const setupContext = (instance.setupContext =
       setup.length > 1 ? createSetupContext(instance) : null)
-
     currentInstance = instance
     pauseTracking()
+    // 执行 setup 函数，并获取结果          内部执行了一下 setup 函数，
     const setupResult = callWithErrorHandling(
+      // callWithErrorHandling 方法内部，封装了个try……catch……来执行需要执行的函数，避免我们的方法报错
+      // setup在执行的时候，并没有 this 的绑定
       setup,
       instance,
       ErrorCodes.SETUP_FUNCTION,
-      [__DEV__ ? shallowReadonly(instance.props) : instance.props, setupContext]
+      //  这个数组里面的元素就是 setup 里面的参数
+      [
+        // 从实例里面拿到 props，并把 props 和 setupContext也传进去
+        __DEV__ ? shallowReadonly(instance.props) : instance.props,
+        setupContext
+      ]
     )
     resetTracking()
     currentInstance = null
 
+    // 判断结果是否是一个 Promise
     if (isPromise(setupResult)) {
       const unsetInstance = () => {
         currentInstance = null
@@ -648,6 +671,7 @@ function setupStatefulComponent(
         )
       }
     } else {
+      // 处理 setup 的结果
       handleSetupResult(instance, setupResult, isSSR)
     }
   } else {
@@ -797,7 +821,7 @@ export function finishComponentSetup(
   if (__FEATURE_OPTIONS_API__ && !(__COMPAT__ && skipOptions)) {
     currentInstance = instance
     pauseTracking()
-    
+
     // 应用对应的options
     applyOptions(instance)
     resetTracking()

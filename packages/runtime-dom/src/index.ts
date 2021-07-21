@@ -54,6 +54,8 @@ export const hydrate = ((...args) => {
 }) as RootHydrateFunction
 
 export const createApp = ((...args) => {
+  // 1，创建app对象
+  // ensureRenderer()和渲染相关的代码都在这里面
   const app = ensureRenderer().createApp(...args)
 
   if (__DEV__) {
@@ -61,8 +63,14 @@ export const createApp = ((...args) => {
     injectCompilerOptionsCheck(app)
   }
 
+  // 2，这里取出了app中的mount方法，因为要进行重写
   const { mount } = app
+
+  // 3，重写mount方法
+  // 这里重写的目的是考虑到跨平台（app.mount里面只包含和平台无关的代码）
+  // 这里重写的代码都是一些和web关系比较大的代码（比如其他平台也可以进行类似的重写）
   app.mount = (containerOrSelector: Element | ShadowRoot | string): any => {
+    // normalizeContainer 方法是在web端获取我们的元素 比如div#app
     const container = normalizeContainer(containerOrSelector)
     if (!container) return
 
@@ -89,7 +97,9 @@ export const createApp = ((...args) => {
     }
 
     // clear content before mounting
+    // 先清空 container 中的原本内容
     container.innerHTML = ''
+    // 调用真正的mount函数进行挂载
     const proxy = mount(container, false, container instanceof SVGElement)
     if (container instanceof Element) {
       container.removeAttribute('v-cloak')
@@ -98,6 +108,7 @@ export const createApp = ((...args) => {
     return proxy
   }
 
+  // 返回app  
   return app
 }) as CreateAppFunction<Element>
 

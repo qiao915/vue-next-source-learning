@@ -749,6 +749,7 @@ export function applyOptions(instance: ComponentInternalInstance) {
     }
   }
 
+  // watch   
   if (watchOptions) {
     for (const key in watchOptions) {
       createWatcher(watchOptions[key], ctx, publicThis, key)
